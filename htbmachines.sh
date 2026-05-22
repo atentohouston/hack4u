@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# Colores
+greenColour="\033[1;32m"
+endColour="\033[0m"
+redColour="\033[1;31m"
+blueColour="\033[1;34m"
+yellowColour="\033[1;33m"
+purpleColour="\033[1;35m"
+turquoiseColour="\033[1;36m"
+grayColour="\033[1;37m"
+
+function ctrl_c(){
+    echo -e "\n\n${blueColour}[!] Saliendo...${endColour}"
+    tput cnorm && exit 1
+}
+
+# ctrl + c
+trap ctrl_c INT
+
+# Variables globales
+main_url="https://htbmachines.github.io/bundle.js"
+
+function helpPanel(){
+    echo -e "\n${yellowColour}[+]${endColour}${grayColour} Uso:${endColour}"
+    echo -e "\t${purpleColour}u)${endColour}${grayColour} Descargar o actualizar archivos necesarios${endColour}"
+    echo -e "\t${purpleColour}m)${endColour}${grayColour} Buscar por un nombre de máquina${endColour}"
+    echo -e "\t${purpleColour}i)${endColour}${grayColour} Buscar por direcciones IP${endColour}"
+    echo -e "\t${purpleColour}d)${endColour}${grayColour} Buscar por la dificultad de una máquina${endColour}"
+    echo -e "\t${purpleColour}o)${endColour}${grayColour} Buscar por el sistema operativo${endColour}"
+    echo -e "\t${purpleColour}y)${endColour}${grayColour} Obtener link de la resolución de la máquina en YouTube${endColour}"
+    echo -e "\t${purpleColour}h)${endColour}${grayColour} Mostrar este panel de ayuda${endColour} "
+}
+
+
+function updateFiles(){
+
+    if [ ! -f bundle.js ]; then
+	tput civis
+	echo -e "\n${yellowColour}[+]${endColour} ${grayColour}Descargando archivos necesarios...${endColour}"
+        curl -s -X GET $main_url > bundle.js
+        js-beautify bundle.js | sponge bundle.js
+	echo -e "\n${yellowColour}[+]${endColour} ${grayColour}Todos los archivos han sido descargados${endColour}"
+        tput cnorm
+    else
+	tput civis
+	echo -e "\n${yellowColour}[+]${endColour} ${grayColour}Comprobando si hay actualizaciones pendientes...${endColour}"
+	curl -s $main_url > bundle_temp.js
+	js-beautify bundle_temp.js | sponge bundle_temp.js
+	md5_temp_value=$(md5sum bundle_temp.js | awk '{print $1}')
+	md5_original_value=$(md5sum bundle.js | awk '{print $1}')
+        if [ "$md5_temp_value" == "$md5_original_value" ]; then
+	    echo -e "\n${yellowColour}[+]${endColour} ${grayColour}No hay actualizaciones${endColour}"
+	    rm bundle_temp.js
+	else
+	    echo -e "\n${yellowColour}[+]${endColour} ${grayColour}Hay actualizaciones${endColour}"
+	    sleep 1
+	    rm bundle.js && mv bundle_temp.js bundle.js
+	    echo -e "\n${yellowColour}[+]${endColour} ${grayColour}Los archivos han sido actualizados${endColour}"
+	fi
+	
+	tput cnorm 
+    fi
+}
+
+function searchMachine(){
+    machineName="$1"
+
+    machineName_checker="$( cat bundle.js | awk "/name: \"$machineName\"/,/resuelta:/" | grep -vE "id:|sku:|resuelta" | tr -d '"' | tr -d ',' | sed 's/^ *//')"
+# verificar si la máquina existe
+    if [ "$machineName_checker" ]; then
+
+        echo -e "\n${yellowColour}[+]${endColour} ${grayColour}Listando las propiedades de la máquina${endColour}${blueColour} $machineName${endColour}\n"
+        cat bundle.js | awk "/name: \"$machineName\"/,/resuelta:/" | grep -vE "id:|sku:|resuelta" | tr -d '"' | tr -d ',' | sed 's/^ *//'
+    else
+        echo -e "\n${redColour}[!] La máquina proporcioada no existe${endColour}" 
+    fi
+}
+
+function searchIP(){
+    ipAddress="$1" 
+    machineName=$(cat bundle.js | grep "ip: \"$ipAddress\"" -B 3 | grep "name: " | awk 'NF{print $NF}' | tr -d '"' | tr -d ',')
+    if [ "$machineName" ]; then
+        echo -e "\n${yellowColour}[+]${endColour}${grayColour} La máquina correspondiente para la IP${endColour} ${blueColour}$ipAddress${endColour} ${grayColour}es${endColour} ${purpleColour}$machineName${endColour}\n"
+    else           
+        echo -e "\n${redColour}La dirección IP proporcioada no existe${endColour}" 
+    fi
+}
+function getYoutubeLink(){
+    machineName="$1"
+    youtubeLink="$(cat bundle.js | awk "/name: \"$machineName\"/,/resuelta:/" | grep -vE "id:|sku:|resuelta" | tr -d '"' | tr -d ',' | sed 's/^ *//' | grep youtube | awk 'NF{print $NF}')"
+    if [ $youtubeLink ]; then
+        echo -e "\n${yellowColour}[+]${endColour} ${grayColour}El tutorial para esta máquina esta en el siguiente link${blueColour} $youtubeLink${endColour}"
+    else
+        echo -e "\n${redColour}[!] La máquina proporcioada no existe${endColour}"
+    fi
+}
+
+function getMachineDifficulty(){
+    difficulty="$1"
+    
+    # 1. CORREGIDO: Quitamos '| column' de aquí para que guarde la lista limpia de nombres
+    result_check="$(cat bundle.js | grep "dificultad: \"$difficulty\"" -B 5 | grep name | awk 'NF{print $NF}' | tr -d '"' | tr -d ',')"
+    
+    # 2. CORREGIDO: Usamos -n y comillas dobles. Ahora es 100% estable y seguro contra múltiples líneas
+    if [ -n "$result_check" ]; then
+        echo -e "\n${yellowColour}[+]${endColour}${grayColour} Representando las máquinas que poseen un nivel de dificultad${endColour} ${blueColour}$difficulty${endColour}${grayColour}:${endColour}\n"
+        
+        # 3. Aquí SÍ dejamos el '| column' (o xargs) para que lo muestre bonito en la pantalla
+        echo "$result_check" | column
+    else      
+        echo -e "\n${redColour}[!] La dificultad indicada no existe${endColour}\n"
+    fi
+}
+function getOSMachines(){
+    os="$1"
+    # 1. Quitamos 'column' de aquí para que la variable se guarde limpia
+    os_results="$(cat bundle.js | grep "so: \"$os\"" -B 5 | grep "name: "  | awk 'NF{print $NF}' | tr -d '"' | tr -d ',')"
+    
+    # 2. Añadimos -n y comillas dobles para que no rompa el script
+    if [ -n "$os_results" ]; then
+        echo -e "\n${yellowColour}[+]${endColour}${grayColour} Mostrando las máquinas cuyo sistema operativo es${endColour} ${blueColour}$os${endColour}${grayColour}:${endColour}\n"
+        # 3. Aplicamos 'column' aquí al mostrar el resultado en pantalla
+        echo "$os_results" | column
+    else
+        echo -e "\n${redColour}[!] El sistema operativo indicado no existe${endColour}"
+    fi
+}
+function getOSDifficultyMachines(){
+    difficulty="$1"
+    os="$2"
+    echo -e "[+] Se va aplicar unabúsqueda por la dificultad $difficulty y los sistemas operativos que sean $os "
+}
+
+declare -i parameter_counter=0
+
+# Chivatos
+declare -i chivato_difficulty=0
+declare -i chivato_os=0
+
+while getopts "m:ui:y:d:o:h" arg; do
+    case $arg in
+        m) machineName="$OPTARG"; let parameter_counter+=1;;
+	      u) let parameter_counter+=2;;
+        i) ipAddress="$OPTARG"; let parameter_counter+=3;;
+        y) machineName="$OPTARG"; let parameter_counter+=4;;
+        d) difficulty="$OPTARG"; chivato_difficulty=1; let parameter_counter+=5;;
+        o) os="$OPTARG"; chivato_os=1; let parameter_counter+=6;;
+        h) helpPanel;;
+    esac
+done
+
+if [ $parameter_counter -eq 1 ]; then
+    searchMachine "$machineName"
+elif [ $parameter_counter -eq 2 ]; then
+    updateFiles
+elif [ $parameter_counter -eq 3 ]; then
+    searchIP $ipAddress
+elif [ $parameter_counter -eq 4 ]; then
+    getYoutubeLink $machineName
+elif [ $parameter_counter -eq 5 ]; then
+    getMachineDifficulty $difficulty
+elif [ $parameter_counter -eq 6 ]; then
+    getOSMachines $os
+elif [ $chivato_difficulty -eq 1  ] && [ $chivato_os -eq 1 ]; then
+    getOSDifficultyMachines $difficulty $os
+else
+    helpPanel
+fi
